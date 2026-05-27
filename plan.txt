@@ -1,0 +1,7 @@
+The goal of this is to have essentially 3 agents communicating and making responses better
+
+
+
+Planner Agent  -->  strategiest plotting solution to a problem/question
+Worker Agent   -->  doer based on planner (action agent)
+Reviewer Agent -->  feedback provider for the worker agent
