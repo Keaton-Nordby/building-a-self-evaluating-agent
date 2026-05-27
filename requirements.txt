@@ -1,1 +1,4 @@
-# Here will be requirements for users to run project
+langgraph
+langchain
+langchain-groq
+python-dotenv
