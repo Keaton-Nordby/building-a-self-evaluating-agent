@@ -28,7 +28,10 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-
+"""
+writes text inside folder in log dir  
+use this to better organize logging based on what agent is being used
+"""
 def write_text_file(filename: str, content: str):
     filepath = os.path.join(LOG_DIR, filename)
     with open(filepath, "w", encoding="utf-8") as f:
