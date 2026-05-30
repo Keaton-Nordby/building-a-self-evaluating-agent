@@ -192,5 +192,29 @@ except Exception as e:
     
     
 
+user_query = input("Enter your query")
+logger.info(f"User input: {user_query}")
+
+"""initialize the state in a fresh state before carrying into agents"""
+initial_state = {
+    "user_query": "",
+    "plan": "",
+    "draft_response": "",
+    "review_reason": "",
+    "review_decision": "",
+    "worker_calls": 0,
+    "reviewer_calls": 0,
+    "revision_count": 0
+}
+
+result = app.invoke(initial_state)
+final_output = result.get("draft_response", "")
+write_text_file("final_output.txt", final_output)
+
+print("\n=== FINAL RESPONSE ===")
+print(final_output)
+
+logger.info(f"Final output: {final_output}")
+
 
 
