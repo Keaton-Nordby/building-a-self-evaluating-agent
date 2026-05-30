@@ -162,4 +162,35 @@ def review_router(state):
 
 
 
+"""In langgraph it allows user to see the agent workflow in a graph"""
+workflow = StateGraph(dict)
+
+workflow.add_node("planner_agent", planner_agent)
+workflow.add_node("worker_agent", worker_agent)
+workflow.add_node("review_agent", review_agent)
+
+workflow.set_entry_point("planner_agent")
+workflow.add_edge("planner_agent", "worker_agent")
+workflow.add_edge("worker_agent", "reviewer_agent")
+workflow.add_conditional_edges(
+    "reviewer agent", review_router,
+    {"worker_agent" : "worker_agent",
+     "__end__" : END }
+)
+
+
+app = workflow.compile()
+
+
+try:
+    png_data = app.get_graph().draw_mermaid_png()
+    with open("graph.png", "wb") as f:
+        f.write(png_data)
+    logger.info("Graph PNG saved as graph.png")
+except Exception as e:
+    logger.error(f"Failed to generate graph PNG: {e}")
+    
+    
+
+
 
