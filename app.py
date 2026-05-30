@@ -56,8 +56,78 @@ def planner_agent(state):
     """
     response = llm.invoke(prompt)
     plan = response.content if hasattr(response, "content") else str(response)
-    """ Here we update the state to get ready to hand it off to next agent """
+    """Update the state to get ready to hand it off to next agent """
     state['plan'] = plan 
     write_text_file("planner_output.txt", plan)
     logger.info(f"Planner output:{plan}")
     return state
+
+
+
+"""Worker agent logic"""
+def worker_agent(state):
+    """tracks number of calls to see if worker agent needs improvment"""
+    state['worker_calls'] += 1
+    feedback = state.get('review_reason', "")
+    logger.info(f"Worker call #{state['worker_calls']}")
+    prompt = f"""
+    You are a worker agent
+    
+    User query: {state['user_query']}
+    
+    Plan {state['plan']}
+    
+    Previous reviewer feedback: {feedback}
+    
+    Write the best possible improved response. If reviewer feedback exists and explicitly fix those issues
+    """
+    response = llm.invoke(prompt)
+    draft_repsonse = response.content if hasattr(response, "content") else str(response)
+    """checks to see if the response needs improvement"""
+    state['draft_response'] = draft_repsonse
+    
+    write_text_file(f"Worker_output_{state['worker_calls']}.txt", draft_repsonse)
+    logger.info(f"Worker_output_{state['worker_calls']}: {draft_repsonse}") 
+    
+    return state   
+
+
+"""Reviews previous agent answer and reasoning"""
+def review_agent(state):
+    state['reviewer_calls'] += 1
+    prompt = f"""
+    You are a strict reviewer agent.
+    
+    User query: {state['user_query']},
+    
+    Draft repsonse: {state['draft_response']}
+    
+    Check for:
+     - concrete examples
+     - implementation details
+     - tradeoffs
+     - clarity
+     - actionable recommendations
+     
+    If anything is missing, revise.
+    Return EXACTLY in this format:
+    Decision: approve or revise
+    Reason: brief reason
+    """
+    response = llm.invoke(prompt)
+    raw_output = response.content.strip() if hasattr(response, "content") else str(response)
+    """Check to see if the answer is sufficient enough or if it needs to get send back to another agent"""
+    decision = "approve" if "dicisions: approve" in raw_output.lower() else 'review'
+    
+    reason_line = next((line for line in raw_output.striplines() if line.lower().startswith("reason:")), "")
+    reason = reason_line.replace("Reason: ", "").strip() if reason_line else "No reason provided"
+    state['review_decision'] = decision
+    state['review_reason'] = reason
+    
+    write_text_file(
+        f"reviewer_output_{state['reviewer_calls']}.txt",
+        raw_output + f"\nParsed Decision: {decision}\nReason: {reason}"
+    )
+    logger.info(f"Reviewer decision #{state['reviewer_calls']}: {decision} ({reason})")
+    return state
+    
