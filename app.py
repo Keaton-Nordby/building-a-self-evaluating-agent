@@ -9,7 +9,10 @@ from langchain_groq import ChatGroq
 load_dotenv()
 
 
-llm = ChatGroq(model="llama-3.3-70b-versatile")
+llm = ChatGroq(
+    model="llama-3.3-70b-versatile",
+    api_key=os.getenv("GROQ_API_KEY")
+)
 
 LOG_DIR = "logs"
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -21,8 +24,8 @@ made easy to read format. added file mode "w" to give logger write access to fil
 """
 logging.basicConfig(
     filename=os.path.join(LOG_DIR, "execution.log"),
-    level=logging,
-    format="%(asctime)s- %(levelname)s = %(message)s",
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
     filemode="w",
 )
 
@@ -100,46 +103,55 @@ def worker_agent(state):
 
 
 def review_agent(state):
-    state["reviewer_calls"] += 1
-    prompt = f"""
-    You are a strict reviewer agent.
-    
-    User query: {state['user_query']},
-    
-    Draft repsonse: {state['draft_response']}
-    
-    Check for:
-     - concrete examples
-     - implementation details
-     - tradeoffs
-     - clarity
-     - actionable recommendations
-     
-    If anything is missing, revise.
-    Return EXACTLY in this format:
-    Decision: approve or revise
-    Reason: brief reason
-    """
-    response = llm.invoke(prompt)
-    raw_output = (
-        response.content.strip() if hasattr(response, "content") else str(response)
-    )
-    """Check to see if the answer is sufficient enough or if it needs to get send back to another agent"""
-    decision = "approve" if "dicisions: approve" in raw_output.lower() else "review"
+    state["reviewer_calls"] = state.get("reviewer_calls", 0) + 1
 
+    prompt = f"""
+You are a strict reviewer agent.
+
+User query: {state['user_query']}
+
+Draft response: {state['draft_response']}
+
+Check for:
+- concrete examples
+- implementation details
+- tradeoffs
+- clarity
+- actionable recommendations
+
+If anything is missing, revise.
+
+Return EXACTLY in this format:
+Decision: approve or revise
+Reason: brief reason
+"""
+
+    response = llm.invoke(prompt)
+    raw_output = response.content.strip() if hasattr(response, "content") else str(response)
+
+    # FIXED: correct keyword + safer parsing
+    decision = (
+        "approve"
+        if "decision: approve" in raw_output.lower()
+        else "review"
+    )
+
+    # FIXED: splitlines (NOT striplines)
     reason_line = next(
         (
             line
-            for line in raw_output.striplines()
+            for line in raw_output.splitlines()
             if line.lower().startswith("reason:")
         ),
         "",
     )
+
     reason = (
-        reason_line.replace("Reason: ", "").strip()
+        reason_line.replace("Reason:", "").strip()
         if reason_line
         else "No reason provided"
     )
+
     state["review_decision"] = decision
     state["review_reason"] = reason
 
@@ -147,17 +159,24 @@ def review_agent(state):
         f"reviewer_output_{state['reviewer_calls']}.txt",
         raw_output + f"\nParsed Decision: {decision}\nReason: {reason}",
     )
-    logger.info(f"Reviewer decision #{state['reviewer_calls']}: {decision} ({reason})")
-    return state
 
+    logger.info(
+        f"Reviewer decision #{state['reviewer_calls']}: {decision} ({reason})"
+    )
+
+    return state
 
 """
 This will fix the next step in the three agent workflow
 """
 def review_router(state):
-    if state.get("review_decision") == "approve" or state.get("review_count", 0) >= 2:
-        return "__and__"
-    state['revision_count'] = state.get("revision_count", 0) + 1
+    if (
+        state.get("review_decision") == "approve"
+        or state.get("revision_count", 0) >= 2
+    ):
+        return "__end__"
+
+    state["revision_count"] = state.get("revision_count", 0) + 1
     return "worker_agent"
 
 
@@ -170,17 +189,20 @@ workflow.add_node("worker_agent", worker_agent)
 workflow.add_node("review_agent", review_agent)
 
 workflow.set_entry_point("planner_agent")
+
 workflow.add_edge("planner_agent", "worker_agent")
-workflow.add_edge("worker_agent", "reviewer_agent")
+workflow.add_edge("worker_agent", "review_agent")
+
 workflow.add_conditional_edges(
-    "reviewer agent", review_router,
-    {"worker_agent" : "worker_agent",
-     "__end__" : END }
+    "review_agent",
+    review_router,
+    {
+        "worker_agent": "worker_agent",
+        "__end__": END,
+    },
 )
 
-
 app = workflow.compile()
-
 
 try:
     png_data = app.get_graph().draw_mermaid_png()
@@ -192,12 +214,12 @@ except Exception as e:
     
     
 
-user_query = input("Enter your query")
+user_query = input("Enter your query: ")
 logger.info(f"User input: {user_query}")
 
 """initialize the state in a fresh state before carrying into agents"""
 initial_state = {
-    "user_query": "",
+    "user_query": user_query,
     "plan": "",
     "draft_response": "",
     "review_reason": "",
